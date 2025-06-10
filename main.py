@@ -1,7 +1,7 @@
 # main.py
 """
-Основное приложение Marketing Mix Model.
-Точка входа для Streamlit приложения.
+Основное приложение Marketing Mix Model v2.1.
+Точка входа для Streamlit приложения с поддержкой экспорта.
 """
 
 import streamlit as st
@@ -13,11 +13,11 @@ from data_processor import DataProcessor
 from visualizer import Visualizer
 from budget_optimizer import BudgetOptimizer
 from app_pages import AppPages
-from config import CUSTOM_CSS, APP_PAGES
+from config import CUSTOM_CSS
 
 # Конфигурация страницы
 st.set_page_config(
-    page_title="Marketing Mix Model",
+    page_title="Marketing Mix Model v2.1",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -25,6 +25,17 @@ st.set_page_config(
 
 # Применение CSS стилей
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# Обновленный список страниц с экспортом
+APP_PAGES = [
+    "🏠 Главная", 
+    "📊 Данные", 
+    "⚙️ Модель", 
+    "📈 Результаты", 
+    "💰 Оптимизация", 
+    "🔮 Сценарии",
+    "📄 Экспорт"  # Новая страница экспорта
+]
 
 class MMM_App:
     """Главный класс приложения Marketing Mix Model."""
@@ -72,6 +83,12 @@ class MMM_App:
         # Переменные для оптимизации
         if 'optimization_settings' not in st.session_state:
             st.session_state.optimization_settings = {}
+        if 'optimization_results' not in st.session_state:
+            st.session_state.optimization_results = None
+            
+        # Переменные для сценариев
+        if 'scenarios_results' not in st.session_state:
+            st.session_state.scenarios_results = {}
     
     def _render_sidebar(self):
         """Отрисовка боковой панели навигации."""
@@ -113,6 +130,12 @@ class MMM_App:
             else:
                 st.caption("🔍 Grid Search не выполнен")
             
+            # Статус оптимизации
+            if st.session_state.optimization_results:
+                st.info("💰 Оптимизация выполнена")
+            else:
+                st.caption("💰 Оптимизация не выполнена")
+            
             st.markdown("---")
             
             # Быстрые действия
@@ -131,25 +154,72 @@ class MMM_App:
                 st.session_state.grid_search_results = {}
                 st.session_state.optimized_adstock_params = {}
                 st.session_state.optimized_saturation_params = {}
+                st.session_state.optimization_results = None
                 st.success("Модель сброшена!")
+                st.rerun()
+            
+            # Быстрый экспорт
+            if (st.session_state.model_fitted and 
+                st.button("📄 Быстрый экспорт", help="Перейти к экспорту результатов")):
+                st.session_state.selected_page = "📄 Экспорт"
                 st.rerun()
             
             st.markdown("---")
             
+            # Проверка зависимостей для экспорта
+            st.markdown("### 📦 Статус экспорта")
+            try:
+                # Проверяем наличие библиотек для экспорта
+                excel_available = False
+                pdf_available = False
+                
+                try:
+                    import openpyxl
+                    excel_available = True
+                except ImportError:
+                    pass
+                
+                try:
+                    import reportlab
+                    pdf_available = True
+                except ImportError:
+                    pass
+                
+                if excel_available:
+                    st.success("✅ Excel экспорт")
+                else:
+                    st.error("❌ Excel экспорт")
+                    st.caption("pip install openpyxl")
+                
+                if pdf_available:
+                    st.success("✅ PDF экспорт")
+                else:
+                    st.error("❌ PDF экспорт")
+                    st.caption("pip install reportlab")
+                    
+            except Exception:
+                st.warning("⚠️ Ошибка проверки экспорта")
+            
             # Информация о приложении
             with st.expander("ℹ️ О приложении", expanded=False):
                 st.markdown("""
-                **Marketing Mix Model v2.0**
+                **Marketing Mix Model v2.1**
                 
                 Система для анализа эффективности 
                 маркетинговых каналов и оптимизации 
                 рекламного бюджета.
+                
+                **Новое в v2.1:**
+                - 📄 Экспорт в Excel и PDF
+                - 📊 Расширенная отчетность
+                - 🎯 Улучшенная оптимизация
                 
                 **Возможности:**
                 - 📊 Анализ атрибуции
                 - 🤖 Автоподбор параметров  
                 - 💰 Оптимизация бюджета
                 - 🔮 Сценарное планирование
+                - 📄 Профессиональные отчеты
                 
                 **Разработано на основе:**
                 - Эконометрических принципов
@@ -174,6 +244,8 @@ class MMM_App:
                 self.pages.show_optimization()
             elif page == "🔮 Сценарии":
                 self.pages.show_scenarios()
+            elif page == "📄 Экспорт":
+                self.pages.show_export()  # Новая страница экспорта
             else:
                 st.error(f"Неизвестная страница: {page}")
                 
@@ -193,6 +265,8 @@ class MMM_App:
                     st.markdown("- Загрузите данные в разделе 'Данные'")
                 elif "session_state" in str(e).lower():
                     st.markdown("- Перезагрузите страницу")
+                elif "export" in str(e).lower():
+                    st.markdown("- Установите библиотеки: pip install openpyxl reportlab")
                 else:
                     st.markdown("- Проверьте качество загруженных данных")
                     st.markdown("- Убедитесь, что все этапы выполнены последовательно")
@@ -202,7 +276,7 @@ class MMM_App:
         st.markdown("---")
         
         # Краткая статистика
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             if st.session_state.data is not None:
@@ -230,14 +304,19 @@ class MMM_App:
             ) else "Не выполнен"
             st.metric("🤖 Grid Search", grid_search_status)
         
+        with col5:
+            export_status = "Доступен" if st.session_state.model_fitted else "Недоступен"
+            st.metric("📄 Экспорт", export_status)
+        
         # Copyright и версия
         st.markdown(
             """
             <div style='text-align: center; color: #666; padding: 20px 0;'>
                 <small>
-                    Marketing Mix Model v2.0 | 
+                    Marketing Mix Model v2.1 | 
                     Powered by Streamlit & Scientific Python Stack |
-                    © 2024 MMM Analytics
+                    © 2024 MMM Analytics | 
+                    <strong>Новое: Экспорт в Excel и PDF!</strong>
                 </small>
             </div>
             """, 
@@ -247,8 +326,8 @@ class MMM_App:
     def run(self):
         """Основной метод запуска приложения."""
         # Заголовок приложения
-        st.title("🎯 Marketing Mix Model")
-        st.markdown("**Система планирования и оптимизации рекламных бюджетов**")
+        st.title("🎯 Marketing Mix Model v2.1")
+        st.markdown("**Система планирования и оптимизации рекламных бюджетов с экспортом отчетов**")
         
         # Отрисовка боковой панели и получение выбранной страницы
         selected_page = self._render_sidebar()
@@ -281,7 +360,8 @@ def handle_streamlit_errors():
         1. Перезагрузите страницу (F5)
         2. Очистите кэш браузера
         3. Проверьте качество загружаемых данных
-        4. Обратитесь к администратору системы
+        4. Установите все зависимости: pip install -r requirements.txt
+        5. Обратитесь к администратору системы
         """)
         
         # Кнопка для перезагрузки
@@ -295,15 +375,30 @@ def check_dependencies():
         'sklearn', 'scipy', 'warnings'
     ]
     
+    optional_modules = {
+        'openpyxl': 'Excel экспорт',
+        'reportlab': 'PDF экспорт'
+    }
+    
     missing_modules = []
+    missing_optional = []
+    
+    # Проверка основных модулей
     for module in required_modules:
         try:
             __import__(module)
         except ImportError:
             missing_modules.append(module)
     
+    # Проверка опциональных модулей
+    for module, description in optional_modules.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing_optional.append(f"{module} ({description})")
+    
     if missing_modules:
-        st.error(f"🚨 Отсутствуют модули: {', '.join(missing_modules)}")
+        st.error(f"🚨 Отсутствуют обязательные модули: {', '.join(missing_modules)}")
         st.markdown("""
         **Для установки зависимостей выполните:**
         ```bash
@@ -311,6 +406,15 @@ def check_dependencies():
         ```
         """)
         st.stop()
+    
+    if missing_optional:
+        st.warning(f"⚠️ Отсутствуют опциональные модули для экспорта: {', '.join(missing_optional)}")
+        st.info("""
+        **Для полной функциональности установите:**
+        ```bash
+        pip install openpyxl reportlab xlsxwriter
+        ```
+        """)
 
 def main():
     """Главная функция приложения."""
