@@ -466,40 +466,82 @@ class ExportManager:
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         story = []
         
-        # Стили
+        # Регистрация шрифтов для поддержки русского языка
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            from reportlab.lib.fonts import addMapping
+            
+            # Попытка использовать системные шрифты
+            try:
+                pdfmetrics.registerFont(TTFont('DejaVuSans', 'DejaVuSans.ttf'))
+                pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', 'DejaVuSans-Bold.ttf'))
+                default_font = 'DejaVuSans'
+                bold_font = 'DejaVuSans-Bold'
+            except:
+                # Fallback к встроенным шрифтам
+                default_font = 'Helvetica'
+                bold_font = 'Helvetica-Bold'
+        except:
+            default_font = 'Helvetica'
+            bold_font = 'Helvetica-Bold'
+        
+        # Стили с поддержкой русского языка
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
+            fontName=bold_font,
             fontSize=18,
             spaceAfter=30,
-            alignment=1  # Center
+            alignment=1,  # Center
+            encoding='utf-8'
         )
         
         heading_style = ParagraphStyle(
             'CustomHeading',
             parent=styles['Heading2'],
+            fontName=bold_font,
             fontSize=14,
             spaceAfter=12,
-            textColor=colors.HexColor('#4472C4')
+            textColor=colors.HexColor('#4472C4'),
+            encoding='utf-8'
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontName=default_font,
+            fontSize=10,
+            encoding='utf-8'
         )
         
         # Заголовок отчета
         story.append(Paragraph("ОТЧЕТ ПО MARKETING MIX MODEL", title_style))
-        story.append(Paragraph(f"Дата создания: {datetime.now().strftime('%d.%m.%Y %H:%M')}", styles['Normal']))
+        story.append(Paragraph(f"Дата создания: {datetime.now().strftime('%d.%m.%Y %H:%M')}", normal_style))
         story.append(Spacer(1, 20))
         
         # Исполнительное резюме
         story.append(Paragraph("ИСПОЛНИТЕЛЬНОЕ РЕЗЮМЕ", heading_style))
         
-        summary_text = f"""
-        <b>Качество модели:</b> R² = {self._safe_get(model_results, 'r2_score', 'Н/Д')}<br/>
-        <b>Точность прогноза:</b> {self._safe_get(model_results, 'accuracy', 0):.1f}%<br/>
-        <b>Статус модели:</b> {self._safe_get(model_results, 'model_status', 'Неизвестно')}<br/>
-        <b>Количество каналов:</b> {len(self._safe_get(model_results, 'media_channels', []))}<br/>
-        <b>Средний ROAS:</b> {self._safe_get(model_results, 'avg_roas', 0):.2f}<br/>
-        """
-        story.append(Paragraph(summary_text, styles['Normal']))
+        # Используем простой текст без HTML разметки
+        r2_score = self._safe_get(model_results, 'r2_score', 'Н/Д')
+        accuracy = self._safe_get(model_results, 'accuracy', 0)
+        model_status = self._safe_get(model_results, 'model_status', 'Неизвестно')
+        media_channels_count = len(self._safe_get(model_results, 'media_channels', []))
+        avg_roas = self._safe_get(model_results, 'avg_roas', 0)
+        
+        summary_lines = [
+            f"Качество модели: R² = {r2_score}",
+            f"Точность прогноза: {accuracy:.1f}%",
+            f"Статус модели: {model_status}",
+            f"Количество каналов: {media_channels_count}",
+            f"Средний ROAS: {avg_roas:.2f}"
+        ]
+        
+        for line in summary_lines:
+            story.append(Paragraph(line, normal_style))
+        
         story.append(Spacer(1, 20))
         
         # Ключевые инсайты
@@ -508,7 +550,7 @@ class ExportManager:
         story.append(Paragraph("КЛЮЧЕВЫЕ ИНСАЙТЫ", heading_style))
         
         for insight in insights['performance_insights'][:3]:  # Топ 3 инсайта
-            story.append(Paragraph(f"• {insight}", styles['Normal']))
+            story.append(Paragraph(f"• {insight}", normal_style))
         
         story.append(Spacer(1, 15))
         
@@ -532,8 +574,10 @@ class ExportManager:
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 0), (-1, 0), bold_font),
+                ('FONTNAME', (0, 1), (-1, -1), default_font),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black)
@@ -565,8 +609,10 @@ class ExportManager:
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTNAME', (0, 0), (-1, 0), bold_font),
+                    ('FONTNAME', (0, 1), (-1, -1), default_font),
                     ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('FONTSIZE', (0, 1), (-1, -1), 10),
                     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                     ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
                     ('GRID', (0, 0), (-1, -1), 1, colors.black)
@@ -580,7 +626,7 @@ class ExportManager:
         
         recommendations = self._generate_recommendations(model_results)
         for rec in recommendations:
-            story.append(Paragraph(f"• {rec}", styles['Normal']))
+            story.append(Paragraph(f"• {rec}", normal_style))
         
         story.append(Spacer(1, 20))
         
@@ -588,16 +634,16 @@ class ExportManager:
         story.append(Paragraph("РИСКИ И ВОЗМОЖНОСТИ", heading_style))
         
         for risk in insights['risk_alerts']:
-            story.append(Paragraph(f"⚠️ {risk}", styles['Normal']))
+            story.append(Paragraph(f"⚠ {risk}", normal_style))
         
         for opp in insights['optimization_opportunities']:
-            story.append(Paragraph(f"📈 {opp}", styles['Normal']))
+            story.append(Paragraph(f"↗ {opp}", normal_style))
         
         story.append(Spacer(1, 20))
         
         # Футер
         footer_text = "Создано с помощью Marketing Mix Model Analytics Platform v2.1"
-        story.append(Paragraph(footer_text, styles['Normal']))
+        story.append(Paragraph(footer_text, normal_style))
         
         # Сборка PDF
         doc.build(story)
@@ -694,23 +740,60 @@ class ExportManager:
             filename = f"MMM_Summary_{timestamp}.pdf"
             buffer = BytesIO()
             
-            # Создание простого PDF
+            # Создание простого PDF с правильными шрифтами
             doc = SimpleDocTemplate(buffer, pagesize=A4)
             story = []
+            
+            # Стили с поддержкой русского языка
+            try:
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                
+                try:
+                    pdfmetrics.registerFont(TTFont('DejaVuSans', 'DejaVuSans.ttf'))
+                    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', 'DejaVuSans-Bold.ttf'))
+                    default_font = 'DejaVuSans'
+                    bold_font = 'DejaVuSans-Bold'
+                except:
+                    default_font = 'Helvetica'
+                    bold_font = 'Helvetica-Bold'
+            except:
+                default_font = 'Helvetica'
+                bold_font = 'Helvetica-Bold'
+            
             styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'Title',
+                parent=styles['Title'],
+                fontName=bold_font,
+                encoding='utf-8'
+            )
+            normal_style = ParagraphStyle(
+                'Normal',
+                parent=styles['Normal'],
+                fontName=default_font,
+                encoding='utf-8'
+            )
             
             # Заголовок
-            story.append(Paragraph("КРАТКАЯ СВОДКА MMM", styles['Title']))
+            story.append(Paragraph("КРАТКАЯ СВОДКА MMM", title_style))
             story.append(Spacer(1, 20))
             
-            # Основные результаты
-            summary_text = f"""
-            <b>Качество модели:</b> R² = {self._safe_get(model_results, 'r2_score', 0):.3f}<br/>
-            <b>Точность:</b> {self._safe_get(model_results, 'accuracy', 0):.1f}%<br/>
-            <b>ROAS:</b> {self._safe_get(model_results, 'avg_roas', 0):.2f}<br/>
-            <b>Статус:</b> {self._safe_get(model_results, 'model_status', 'Неизвестно')}<br/>
-            """
-            story.append(Paragraph(summary_text, styles['Normal']))
+            # Основные результаты без HTML разметки
+            r2_score = self._safe_get(model_results, 'r2_score', 0)
+            accuracy = self._safe_get(model_results, 'accuracy', 0)
+            avg_roas = self._safe_get(model_results, 'avg_roas', 0)
+            model_status = self._safe_get(model_results, 'model_status', 'Неизвестно')
+            
+            summary_lines = [
+                f"Качество модели: R² = {r2_score:.3f}",
+                f"Точность: {accuracy:.1f}%",
+                f"ROAS: {avg_roas:.2f}",
+                f"Статус: {model_status}"
+            ]
+            
+            for line in summary_lines:
+                story.append(Paragraph(line, normal_style))
             
             doc.build(story)
             buffer.seek(0)
