@@ -1,7 +1,7 @@
 # export_manager.py
 """
 Система экспорта результатов Marketing Mix Model в Excel и PDF.
-Версия 2.1 с расширенными возможностями отчетности.
+Версия 2.1 с расширенными возможностями отчетности и исправленными ошибками.
 """
 
 import pandas as pd
@@ -45,6 +45,27 @@ class ExportManager:
             'pdf': PDF_AVAILABLE
         }
     
+    def _safe_get(self, data, key, default=None):
+        """Безопасное получение значения из словаря."""
+        if data is None:
+            return default
+        if isinstance(data, dict):
+            return data.get(key, default)
+        return default
+    
+    def _safe_access_df(self, data, operation='len'):
+        """Безопасный доступ к DataFrame."""
+        if data is None:
+            return 0 if operation == 'len' else False
+        if isinstance(data, pd.DataFrame):
+            if operation == 'len':
+                return len(data)
+            elif operation == 'empty':
+                return data.empty
+            elif operation == 'exists':
+                return True
+        return 0 if operation == 'len' else False
+    
     def export_to_excel(self, model_results, filename=None):
         """
         Экспорт результатов MMM в Excel файл.
@@ -62,6 +83,10 @@ class ExportManager:
         if filename is None:
             filename = f"MMM_Report_{self.timestamp}.xlsx"
         
+        # Проверка входных данных
+        if model_results is None:
+            model_results = {}
+        
         # Создание буфера в памяти
         buffer = BytesIO()
         
@@ -72,28 +97,34 @@ class ExportManager:
             self._create_summary_sheet(writer, model_results)
             
             # Лист 2: Декомпозиция продаж
-            if 'contributions' in model_results:
-                self._create_decomposition_sheet(writer, model_results['contributions'])
+            contributions = self._safe_get(model_results, 'contributions', {})
+            if contributions:
+                self._create_decomposition_sheet(writer, contributions)
             
             # Лист 3: ROAS анализ
-            if 'roas_data' in model_results:
-                self._create_roas_sheet(writer, model_results['roas_data'])
+            roas_data = self._safe_get(model_results, 'roas_data')
+            if roas_data is not None and not self._safe_access_df(roas_data, 'empty'):
+                self._create_roas_sheet(writer, roas_data)
             
             # Лист 4: Метрики качества модели
-            if 'model_metrics' in model_results:
-                self._create_metrics_sheet(writer, model_results['model_metrics'])
+            model_metrics = self._safe_get(model_results, 'model_metrics', {})
+            if model_metrics:
+                self._create_metrics_sheet(writer, model_metrics)
             
             # Лист 5: Оптимизация бюджета
-            if 'optimization_results' in model_results:
-                self._create_optimization_sheet(writer, model_results['optimization_results'])
+            optimization_results = self._safe_get(model_results, 'optimization_results')
+            if optimization_results:
+                self._create_optimization_sheet(writer, optimization_results)
             
             # Лист 6: Сценарии
-            if 'scenarios' in model_results:
-                self._create_scenarios_sheet(writer, model_results['scenarios'])
+            scenarios = self._safe_get(model_results, 'scenarios')
+            if scenarios:
+                self._create_scenarios_sheet(writer, scenarios)
             
             # Лист 7: Данные для анализа
-            if 'raw_data' in model_results:
-                self._create_data_sheet(writer, model_results['raw_data'])
+            raw_data = self._safe_get(model_results, 'raw_data')
+            if raw_data is not None and not self._safe_access_df(raw_data, 'empty'):
+                self._create_data_sheet(writer, raw_data)
             
             # Лист 8: Инсайты и рекомендации
             self._create_insights_sheet(writer, model_results)
@@ -105,7 +136,7 @@ class ExportManager:
         """Создание сводного листа."""
         ws_name = "Сводка"
         
-        # Создание сводной информации
+        # Создание сводной информации с безопасным доступом
         summary_data = {
             'Параметр': [
                 'Дата создания отчета',
@@ -120,14 +151,14 @@ class ExportManager:
             ],
             'Значение': [
                 datetime.now().strftime("%d.%m.%Y %H:%M"),
-                f"{model_results.get('r2_score', 0):.3f}",
-                f"{model_results.get('accuracy', 0):.1f}%",
-                len(model_results.get('media_channels', [])),
-                model_results.get('analysis_period', 'Н/Д'),
-                f"{model_results.get('total_budget', 0)/1000:.0f}",
-                f"{model_results.get('avg_roas', 0):.2f}",
-                f"{model_results.get('base_contribution_pct', 0):.1f}%",
-                model_results.get('model_status', 'Неизвестно')
+                f"{self._safe_get(model_results, 'r2_score', 0):.3f}",
+                f"{self._safe_get(model_results, 'accuracy', 0):.1f}%",
+                len(self._safe_get(model_results, 'media_channels', [])),
+                self._safe_get(model_results, 'analysis_period', 'Н/Д'),
+                f"{self._safe_get(model_results, 'total_budget', 0)/1000:.0f}",
+                f"{self._safe_get(model_results, 'avg_roas', 0):.2f}",
+                f"{self._safe_get(model_results, 'base_contribution_pct', 0):.1f}%",
+                self._safe_get(model_results, 'model_status', 'Неизвестно')
             ]
         }
         
@@ -153,13 +184,13 @@ class ExportManager:
         
         # Подготовка данных
         contrib_data = []
-        total_contribution = sum(contributions.values())
+        total_contribution = sum(contributions.values()) if contributions else 1
         
         for channel, value in contributions.items():
             contrib_data.append({
-                'Канал': channel.replace('_spend', '').replace('_', ' ').title(),
-                'Вклад (шт)': int(value),
-                'Доля (%)': round(value / total_contribution * 100, 1) if total_contribution > 0 else 0,
+                'Канал': str(channel).replace('_spend', '').replace('_', ' ').title(),
+                'Вклад (шт)': int(float(value)) if value is not None else 0,
+                'Доля (%)': round(float(value) / total_contribution * 100, 1) if total_contribution > 0 and value is not None else 0,
                 'Тип': 'Базовая линия' if channel == 'Base' else 'Медиа-канал'
             })
         
@@ -244,13 +275,16 @@ class ExportManager:
         """Создание листа результатов оптимизации."""
         ws_name = "Оптимизация"
         
-        if 'allocation' in optimization_results:
+        allocation = self._safe_get(optimization_results, 'allocation', {})
+        if allocation:
             opt_data = []
-            for channel, budget in optimization_results['allocation'].items():
+            total_budget = sum(allocation.values())
+            
+            for channel, budget in allocation.items():
                 opt_data.append({
-                    'Канал': channel.replace('_spend', '').replace('_', ' ').title(),
-                    'Оптимальный бюджет': int(budget),
-                    'Доля (%)': round(budget / sum(optimization_results['allocation'].values()) * 100, 1)
+                    'Канал': str(channel).replace('_spend', '').replace('_', ' ').title(),
+                    'Оптимальный бюджет': int(float(budget)) if budget is not None else 0,
+                    'Доля (%)': round(float(budget) / total_budget * 100, 1) if total_budget > 0 and budget is not None else 0
                 })
             
             opt_df = pd.DataFrame(opt_data)
@@ -260,11 +294,11 @@ class ExportManager:
             worksheet = writer.sheets[ws_name]
             summary_start_row = len(opt_df) + 5
             summary_data = [
-                ['Прогнозируемые продажи', f"{optimization_results.get('predicted_sales', 0):,.0f}"],
-                ['Прогнозируемый ROAS', f"{optimization_results.get('predicted_roas', 0):.2f}"],
-                ['Прогнозируемый ROI', f"{optimization_results.get('predicted_roi', 0):.2f}"],
-                ['Общий бюджет', f"{optimization_results.get('total_budget_used', 0):,.0f}"],
-                ['Метод оптимизации', optimization_results.get('optimization_method', 'Н/Д')]
+                ['Прогнозируемые продажи', f"{self._safe_get(optimization_results, 'predicted_sales', 0):,.0f}"],
+                ['Прогнозируемый ROAS', f"{self._safe_get(optimization_results, 'predicted_roas', 0):.2f}"],
+                ['Прогнозируемый ROI', f"{self._safe_get(optimization_results, 'predicted_roi', 0):.2f}"],
+                ['Общий бюджет', f"{self._safe_get(optimization_results, 'total_budget_used', 0):,.0f}"],
+                ['Метод оптимизации', self._safe_get(optimization_results, 'optimization_method', 'Н/Д')]
             ]
             
             for i, (param, value) in enumerate(summary_data):
@@ -424,6 +458,10 @@ class ExportManager:
         if filename is None:
             filename = f"MMM_Report_{self.timestamp}.pdf"
         
+        # Проверка входных данных
+        if model_results is None:
+            model_results = {}
+        
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         story = []
@@ -455,11 +493,11 @@ class ExportManager:
         story.append(Paragraph("ИСПОЛНИТЕЛЬНОЕ РЕЗЮМЕ", heading_style))
         
         summary_text = f"""
-        <b>Качество модели:</b> R² = {model_results.get('r2_score', 'Н/Д')}<br/>
-        <b>Точность прогноза:</b> {model_results.get('accuracy', 0):.1f}%<br/>
-        <b>Статус модели:</b> {model_results.get('model_status', 'Неизвестно')}<br/>
-        <b>Количество каналов:</b> {len(model_results.get('media_channels', []))}<br/>
-        <b>Средний ROAS:</b> {model_results.get('avg_roas', 0):.2f}<br/>
+        <b>Качество модели:</b> R² = {self._safe_get(model_results, 'r2_score', 'Н/Д')}<br/>
+        <b>Точность прогноза:</b> {self._safe_get(model_results, 'accuracy', 0):.1f}%<br/>
+        <b>Статус модели:</b> {self._safe_get(model_results, 'model_status', 'Неизвестно')}<br/>
+        <b>Количество каналов:</b> {len(self._safe_get(model_results, 'media_channels', []))}<br/>
+        <b>Средний ROAS:</b> {self._safe_get(model_results, 'avg_roas', 0):.2f}<br/>
         """
         story.append(Paragraph(summary_text, styles['Normal']))
         story.append(Spacer(1, 20))
@@ -475,17 +513,18 @@ class ExportManager:
         story.append(Spacer(1, 15))
         
         # Декомпозиция продаж
-        if 'contributions' in model_results:
+        contributions = self._safe_get(model_results, 'contributions', {})
+        if contributions:
             story.append(Paragraph("ДЕКОМПОЗИЦИЯ ПРОДАЖ", heading_style))
             
             contrib_data = [['Канал', 'Вклад', 'Доля (%)']]
-            total = sum(model_results['contributions'].values())
+            total = sum(contributions.values())
             
-            for channel, value in model_results['contributions'].items():
+            for channel, value in contributions.items():
                 contrib_data.append([
-                    channel.replace('_spend', '').replace('_', ' ').title(),
-                    f"{int(value):,}",
-                    f"{value/total*100:.1f}%" if total > 0 else "0%"
+                    str(channel).replace('_spend', '').replace('_', ' ').title(),
+                    f"{int(float(value)) if value is not None else 0:,}",
+                    f"{float(value)/total*100:.1f}%" if total > 0 and value is not None else "0%"
                 ])
             
             table = Table(contrib_data)
@@ -504,19 +543,19 @@ class ExportManager:
             story.append(Spacer(1, 20))
         
         # ROAS анализ
-        if 'roas_data' in model_results:
+        roas_data = self._safe_get(model_results, 'roas_data')
+        if roas_data is not None and not self._safe_access_df(roas_data, 'empty'):
             story.append(Paragraph("АНАЛИЗ ROAS", heading_style))
             
-            roas_data = model_results['roas_data']
             if isinstance(roas_data, pd.DataFrame) and not roas_data.empty:
                 roas_table_data = [['Канал', 'ROAS', 'Оценка']]
                 
                 for _, row in roas_data.iterrows():
-                    roas_val = row['ROAS']
+                    roas_val = float(row.get('ROAS', 0))
                     assessment = 'Отлично' if roas_val >= 3.0 else 'Хорошо' if roas_val >= 2.0 else 'Приемлемо' if roas_val >= 1.5 else 'Плохо'
                     
                     roas_table_data.append([
-                        str(row['Channel']),
+                        str(row.get('Channel', 'Неизвестно')),
                         f"{roas_val:.2f}",
                         assessment
                     ])
@@ -571,7 +610,7 @@ class ExportManager:
         recommendations = []
         
         # Рекомендации по качеству модели
-        r2_score = model_results.get('r2_score', 0)
+        r2_score = self._safe_get(model_results, 'r2_score', 0)
         if r2_score >= 0.8:
             recommendations.append("Модель демонстрирует высокое качество. Рекомендации можно использовать для планирования бюджета.")
         elif r2_score >= 0.5:
@@ -580,7 +619,7 @@ class ExportManager:
             recommendations.append("Качество модели низкое. Требуется улучшение данных или параметров модели.")
         
         # Рекомендации по ROAS
-        avg_roas = model_results.get('avg_roas', 0)
+        avg_roas = self._safe_get(model_results, 'avg_roas', 0)
         if avg_roas >= 3.0:
             recommendations.append("Средний ROAS высокий. Рассмотрите увеличение общего бюджета.")
         elif avg_roas >= 2.0:
@@ -589,7 +628,7 @@ class ExportManager:
             recommendations.append("ROAS ниже ожидаемого. Требуется пересмотр стратегии или каналов.")
         
         # Рекомендации по декомпозиции
-        base_pct = model_results.get('base_contribution_pct', 0)
+        base_pct = self._safe_get(model_results, 'base_contribution_pct', 0)
         if base_pct > 70:
             recommendations.append("Высокая доля базовой линии. Проверьте эффективность медиа-каналов.")
         elif base_pct < 30:
@@ -612,6 +651,10 @@ class ExportManager:
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        # Проверка входных данных
+        if model_results is None:
+            model_results = {}
+        
         if format == 'excel':
             filename = f"MMM_Summary_{timestamp}.xlsx"
             buffer = BytesIO()
@@ -628,11 +671,11 @@ class ExportManager:
                         'Статус модели'
                     ],
                     'Значение': [
-                        f"{model_results.get('r2_score', 0):.3f}",
-                        f"{model_results.get('accuracy', 0):.1f}%",
-                        f"{model_results.get('avg_roas', 0):.2f}",
-                        f"{model_results.get('total_budget', 0):,.0f} руб",
-                        model_results.get('model_status', 'Неизвестно')
+                        f"{self._safe_get(model_results, 'r2_score', 0):.3f}",
+                        f"{self._safe_get(model_results, 'accuracy', 0):.1f}%",
+                        f"{self._safe_get(model_results, 'avg_roas', 0):.2f}",
+                        f"{self._safe_get(model_results, 'total_budget', 0):,.0f} руб",
+                        self._safe_get(model_results, 'model_status', 'Неизвестно')
                     ]
                 }
                 
@@ -640,8 +683,9 @@ class ExportManager:
                 summary_df.to_excel(writer, sheet_name='Сводка', index=False)
                 
                 # ROAS данные если доступны
-                if 'roas_data' in model_results and not model_results['roas_data'].empty:
-                    model_results['roas_data'].to_excel(writer, sheet_name='ROAS', index=False)
+                roas_data = self._safe_get(model_results, 'roas_data')
+                if roas_data is not None and not self._safe_access_df(roas_data, 'empty'):
+                    roas_data.to_excel(writer, sheet_name='ROAS', index=False)
             
             buffer.seek(0)
             return buffer.getvalue(), filename
@@ -661,10 +705,10 @@ class ExportManager:
             
             # Основные результаты
             summary_text = f"""
-            <b>Качество модели:</b> R² = {model_results.get('r2_score', 0):.3f}<br/>
-            <b>Точность:</b> {model_results.get('accuracy', 0):.1f}%<br/>
-            <b>ROAS:</b> {model_results.get('avg_roas', 0):.2f}<br/>
-            <b>Статус:</b> {model_results.get('model_status', 'Неизвестно')}<br/>
+            <b>Качество модели:</b> R² = {self._safe_get(model_results, 'r2_score', 0):.3f}<br/>
+            <b>Точность:</b> {self._safe_get(model_results, 'accuracy', 0):.1f}%<br/>
+            <b>ROAS:</b> {self._safe_get(model_results, 'avg_roas', 0):.2f}<br/>
+            <b>Статус:</b> {self._safe_get(model_results, 'model_status', 'Неизвестно')}<br/>
             """
             story.append(Paragraph(summary_text, styles['Normal']))
             
@@ -687,9 +731,10 @@ class ExportManager:
             'success_factors': []
         }
         
-        r2_score = model_results.get('r2_score', 0)
-        avg_roas = model_results.get('avg_roas', 0)
-        contributions = model_results.get('contributions', {})
+        # Безопасное извлечение данных
+        r2_score = self._safe_get(model_results, 'r2_score', 0)
+        avg_roas = self._safe_get(model_results, 'avg_roas', 0)
+        contributions = self._safe_get(model_results, 'contributions', {})
         
         # Инсайты по производительности
         if r2_score >= 0.8:
@@ -699,9 +744,9 @@ class ExportManager:
             insights['performance_insights'].append("Маркетинговые инвестиции показывают отличную окупаемость")
         
         # Возможности оптимизации
-        if 'roas_data' in model_results:
-            roas_data = model_results['roas_data']
-            if not roas_data.empty:
+        roas_data = self._safe_get(model_results, 'roas_data')
+        if roas_data is not None and not self._safe_access_df(roas_data, 'empty'):
+            try:
                 best_channel = roas_data.loc[roas_data['ROAS'].idxmax()]
                 worst_channel = roas_data.loc[roas_data['ROAS'].idxmin()]
                 
@@ -713,20 +758,23 @@ class ExportManager:
                     insights['optimization_opportunities'].append(
                         f"Канал {worst_channel['Channel']} показывает низкий ROAS {worst_channel['ROAS']:.2f} - требует оптимизации"
                     )
+            except (KeyError, IndexError, TypeError):
+                insights['optimization_opportunities'].append("Рекомендуется детальный анализ эффективности каналов")
         
         # Предупреждения о рисках
         if r2_score < 0.6:
             insights['risk_alerts'].append("Низкое качество модели - рекомендации могут быть неточными")
         
         base_share = 0
-        total_contribution = sum(contributions.values())
-        if total_contribution > 0:
-            base_share = contributions.get('Base', 0) / total_contribution
-            
-            if base_share > 0.8:
-                insights['risk_alerts'].append("Высокая доля органических продаж - возможна недооценка медиа-эффектов")
-            elif base_share < 0.2:
-                insights['risk_alerts'].append("Низкая доля органических продаж - возможна переоценка медиа-эффектов")
+        if contributions:
+            total_contribution = sum(contributions.values())
+            if total_contribution > 0:
+                base_share = contributions.get('Base', 0) / total_contribution
+                
+                if base_share > 0.8:
+                    insights['risk_alerts'].append("Высокая доля органических продаж - возможна недооценка медиа-эффектов")
+                elif base_share < 0.2:
+                    insights['risk_alerts'].append("Низкая доля органических продаж - возможна переоценка медиа-эффектов")
         
         # Факторы успеха
         if avg_roas >= 2.5:
@@ -759,16 +807,19 @@ class ExportManager:
             Результаты сценариев (опционально)
         """
         
-        # Базовые расчеты
-        total_contribution = sum(contributions.values()) if contributions else 0
+        # Базовые расчеты с безопасной обработкой
+        total_contribution = sum(contributions.values()) if contributions else 1
         base_contribution = contributions.get('Base', 0) if contributions else 0
         base_pct = (base_contribution / total_contribution * 100) if total_contribution > 0 else 0
         
-        avg_roas = roas_data['ROAS'].mean() if isinstance(roas_data, pd.DataFrame) and not roas_data.empty else 0
+        avg_roas = 0
+        if roas_data is not None and not self._safe_access_df(roas_data, 'empty'):
+            if 'ROAS' in roas_data.columns:
+                avg_roas = roas_data['ROAS'].mean()
         
         # Определение статуса модели
-        r2_score = metrics.get('Качество прогноза', 0)
-        accuracy = metrics.get('Точность модели (%)', 0)
+        r2_score = metrics.get('Качество прогноза', 0) if metrics else 0
+        accuracy = metrics.get('Точность модели (%)', 0) if metrics else 0
         
         if r2_score >= 0.8 and accuracy >= 85:
             model_status = "Отлично - готова к использованию"
@@ -779,18 +830,41 @@ class ExportManager:
         else:
             model_status = "Плохо - требует улучшения"
         
+        # Безопасная обработка медиа-каналов
+        media_channels = []
+        if hasattr(model, 'media_channels') and model.media_channels:
+            media_channels = model.media_channels
+        
+        # Безопасная обработка периода анализа
+        analysis_period = 'Н/Д'
+        if data is not None and not self._safe_access_df(data, 'empty') and 'date' in data.columns:
+            try:
+                analysis_period = f"{data['date'].min().strftime('%Y-%m-%d')} - {data['date'].max().strftime('%Y-%m-%d')}"
+            except:
+                analysis_period = 'Н/Д'
+        
+        # Безопасная обработка общего бюджета
+        total_budget = 0
+        if data is not None and not self._safe_access_df(data, 'empty'):
+            for ch in media_channels:
+                if ch in data.columns:
+                    try:
+                        total_budget += data[ch].sum()
+                    except:
+                        pass
+        
         export_data = {
             'r2_score': r2_score,
             'accuracy': accuracy,
             'model_status': model_status,
-            'media_channels': getattr(model, 'media_channels', []),
-            'analysis_period': f"{data['date'].min().strftime('%Y-%m-%d')} - {data['date'].max().strftime('%Y-%m-%d')}" if 'date' in data.columns else 'Н/Д',
-            'total_budget': sum(data[ch].sum() for ch in getattr(model, 'media_channels', []) if ch in data.columns),
+            'media_channels': media_channels,
+            'analysis_period': analysis_period,
+            'total_budget': total_budget,
             'avg_roas': avg_roas,
             'base_contribution_pct': base_pct,
-            'contributions': contributions,
+            'contributions': contributions or {},
             'roas_data': roas_data,
-            'model_metrics': metrics,
+            'model_metrics': metrics or {},
             'raw_data': data
         }
         
